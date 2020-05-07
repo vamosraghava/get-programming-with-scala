@@ -3,50 +3,56 @@ package org.example.books
 import java.time.Year
 
 import org.example.books.entities._
+import org.slf4j.{Logger, LoggerFactory}
 
 class BookService(bookCatalogPath: String) {
+  private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
   private val books: List[Book] = new BookParser(bookCatalogPath).books
 
   private var bookLoans: Set[BookLoan] = Set.empty
 
   def search(title: Option[String] = None,
-             author: Option[String] = None,
-             year: Option[Year] = None): List[Book] =
+             author: Option[String] = None): List[Book] =
     books.filter { book =>
-      title.forall(t => book.title == t) &&
-      author.forall(a => book.authors.contains(a)) &&
-      year.forall(y => book.year == y)
+      title.forall(t => book.title.contains(t)) &&
+      author.forall(author => book.authors.exists(_.contains(author)))
     }
 
-  def reserveBook(bookId: Long, user: User): Either[String, BookLoan] =
-    for {
+  def reserveBook(bookId: Long, user: User): Either[String, BookLoan] = {
+    val res = for {
       _ <- checkReserveLimits(user)
       book <- checkBookExists(bookId)
       _ <- checkBookIsAvailable(book)
     } yield registerBookLoan(book, user)
+    logger.info(s"User ${user.id} - Reserve request for book $bookId: $res")
+    res
+  }
 
-  def returnBook(bookId: Long): Either[String, BookLoan] =
-    for {
+  def returnBook(bookId: Long): Either[String, BookLoan] = {
+    val res = for {
       book <- checkBookExists(bookId)
       user <- checkBookIsTaken(book)
     } yield unregisterBookLoan(book, user)
-
-  private val loanLimit = 5
-  private def checkReserveLimits(user: User): Either[String, User] = {
-    if (bookLoans.count(_.user == user) <= loanLimit) Right(user)
-    else Left(s"You cannot loan more than $loanLimit books")
+    logger.info(s"Book $bookId - Return request for book $bookId: $res")
+    res
   }
 
+  private val loanLimit = 5
+  private def checkReserveLimits(user: User): Either[String, User] =
+    if (bookLoans.count(_.user == user) <= loanLimit) Right(user)
+    else Left(s"You cannot loan more than $loanLimit books")
+
+
   private def checkBookExists(bookId: Long): Either[String, Book] =
-    findBookById(bookId) match {
+    books.find(_.id == bookId) match {
       case Some(book) => Right(book)
       case None => Left(s"Book with id $bookId not found")
     }
 
   private def checkBookIsAvailable(book: Book): Either[String, Book] =
     findBookLoan(book) match {
-      case Some(_) => Left("Another user has loaned the book")
+      case Some(_) => Left(s"Another user has book ${book.id}")
       case None => Right(book)
     }
 
@@ -56,20 +62,21 @@ class BookService(bookCatalogPath: String) {
       case None => Left(s"Book ${book.id} does not result out on loan")
     }
 
-  private def findBookById(id: Long): Option[Book] = books.find(_.id == id)
-
   private def findBookLoan(book: Book): Option[BookLoan] = bookLoans.find(_.book == book)
 
   private def registerBookLoan(book: Book, user: User): BookLoan = {
     val bookLoan = BookLoan(book, user)
-    synchronized { bookLoans = bookLoans + bookLoan }
+    updateBookLoans(loans => loans + bookLoan)
     bookLoan
   }
 
   private def unregisterBookLoan(book: Book, user: User): BookLoan = {
     val bookLoan = BookLoan(book, user)
-    synchronized { bookLoans = bookLoans - bookLoan }
+    updateBookLoans(loans => loans - bookLoan)
     bookLoan
   }
+
+  private def updateBookLoans(updateF: Set[BookLoan] => Set[BookLoan]): Unit =
+    synchronized { bookLoans = updateF(bookLoans) }
 
 }
