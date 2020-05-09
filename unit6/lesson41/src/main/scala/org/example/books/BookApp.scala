@@ -10,14 +10,16 @@ object BookApp extends App {
 
   val books = bookService.search(title = Some("Harry Potter"))
 
-  logger.info(s"Found ${books.size} books: \n${books.map(_.toPrettyString).mkString("\n")}")
+  val res = books.map(_.toPrettyString)
+  logger.info(s"Found ${books.size} books: \n${res.mkString("\n")}")
 
   val martin = User(1, "Martin Odersky")
   val daniela = User(2, "Daniela Sfregola")
 
-  require(books.size >= 2, "This example scenario needs at least two books")
-
-  val List(bookA, bookB) = books.take(2)
+  require(books.size >= 2,
+          "This example scenario needs at least two books")
+  val bookA = books.apply(0)
+  val bookB = books.apply(1)
 
   // martin takes the first 2 books
   bookService.reserveBook(bookA.id, martin)

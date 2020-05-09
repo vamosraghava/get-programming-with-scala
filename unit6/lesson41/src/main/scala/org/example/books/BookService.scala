@@ -1,7 +1,5 @@
 package org.example.books
 
-import java.time.Year
-
 import org.example.books.entities._
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -25,7 +23,7 @@ class BookService(bookCatalogPath: String) {
       book <- checkBookExists(bookId)
       _ <- checkBookIsAvailable(book)
     } yield registerBookLoan(book, user)
-    logger.info(s"User ${user.id} - Reserve request for book $bookId: $res")
+    logger.info(s"Book $bookId - User ${user.id} - Reserve request: ${outcomeMsg(res)}")
     res
   }
 
@@ -34,15 +32,18 @@ class BookService(bookCatalogPath: String) {
       book <- checkBookExists(bookId)
       user <- checkBookIsTaken(book)
     } yield unregisterBookLoan(book, user)
-    logger.info(s"Book $bookId - Return request for book $bookId: $res")
+    logger.info(s"Book $bookId - Return request: ${outcomeMsg(res)}")
     res
   }
 
+  private def outcomeMsg[T](res: Either[String, T]): String =
+    res.left.getOrElse("OK")
+
   private val loanLimit = 5
   private def checkReserveLimits(user: User): Either[String, User] =
-    if (bookLoans.count(_.user == user) <= loanLimit) Right(user)
-    else Left(s"You cannot loan more than $loanLimit books")
-
+    if (bookLoans.count(_.user == user) < loanLimit) Right(user)
+    else Left(
+      s"You cannot loan more than $loanLimit books at the time")
 
   private def checkBookExists(bookId: Long): Either[String, Book] =
     books.find(_.id == bookId) match {
@@ -62,7 +63,8 @@ class BookService(bookCatalogPath: String) {
       case None => Left(s"Book ${book.id} does not result out on loan")
     }
 
-  private def findBookLoan(book: Book): Option[BookLoan] = bookLoans.find(_.book == book)
+  private def findBookLoan(book: Book): Option[BookLoan] =
+    bookLoans.find(_.book == book)
 
   private def registerBookLoan(book: Book, user: User): BookLoan = {
     val bookLoan = BookLoan(book, user)
@@ -76,7 +78,7 @@ class BookService(bookCatalogPath: String) {
     bookLoan
   }
 
-  private def updateBookLoans(updateF: Set[BookLoan] => Set[BookLoan]): Unit =
-    synchronized { bookLoans = updateF(bookLoans) }
+  private def updateBookLoans(f: Set[BookLoan] => Set[BookLoan]): Unit =
+    synchronized { bookLoans = f(bookLoans) }
 
 }
